@@ -84,8 +84,6 @@ import java.util.ArrayList;
  * sized to fill all available space in the closed state. Weight on a pane that becomes covered
  * indicates that the pane should be sized to fill all available space except a small minimum strip
  * that the user may use to grab the slideable view and pull it back over into a closed state.</p>
- *
- * <p>Experimental. This class may be removed.</p>
  */
 public class SlidingPaneLayout extends ViewGroup {
     private static final String TAG = "SlidingPaneLayout";
@@ -424,15 +422,38 @@ public class SlidingPaneLayout extends ViewGroup {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-        final int widthSize = MeasureSpec.getSize(widthMeasureSpec);
-        final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-        final int heightSize = MeasureSpec.getSize(heightMeasureSpec);
+        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
+        int widthSize = MeasureSpec.getSize(widthMeasureSpec);
+        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+        int heightSize = MeasureSpec.getSize(heightMeasureSpec);
 
         if (widthMode != MeasureSpec.EXACTLY) {
-            throw new IllegalStateException("Width must have an exact value or MATCH_PARENT");
+            if (isInEditMode()) {
+                // Don't crash the layout editor. Consume all of the space if specified
+                // or pick a magic number from thin air otherwise.
+                // TODO Better communication with tools of this bogus state.
+                // It will crash on a real device.
+                if (widthMode == MeasureSpec.AT_MOST) {
+                    widthMode = MeasureSpec.EXACTLY;
+                } else if (widthMode == MeasureSpec.UNSPECIFIED) {
+                    widthMode = MeasureSpec.EXACTLY;
+                    widthSize = 300;
+                }
+            } else {
+                throw new IllegalStateException("Width must have an exact value or MATCH_PARENT");
+            }
         } else if (heightMode == MeasureSpec.UNSPECIFIED) {
-            throw new IllegalStateException("Height must not be UNSPECIFIED");
+            if (isInEditMode()) {
+                // Don't crash the layout editor. Pick a magic number from thin air instead.
+                // TODO Better communication with tools of this bogus state.
+                // It will crash on a real device.
+                if (heightMode == MeasureSpec.UNSPECIFIED) {
+                    heightMode = MeasureSpec.AT_MOST;
+                    heightSize = 300;
+                }
+            } else {
+                throw new IllegalStateException("Height must not be UNSPECIFIED");
+            }
         }
 
         int layoutHeight = 0;
@@ -526,6 +547,10 @@ public class SlidingPaneLayout extends ViewGroup {
 
                 final LayoutParams lp = (LayoutParams) child.getLayoutParams();
 
+                if (child.getVisibility() == GONE) {
+                    continue;
+                }
+
                 final boolean skippedFirstPass = lp.width == 0 && lp.weight > 0;
                 final int measuredWidth = skippedFirstPass ? 0 : child.getMeasuredWidth();
                 if (canSlide && child != mSlideableView) {
@@ -604,6 +629,7 @@ public class SlidingPaneLayout extends ViewGroup {
 
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
+
         final int width = r - l;
         final int paddingLeft = getPaddingLeft();
         final int paddingRight = getPaddingRight();
@@ -1366,23 +1392,36 @@ public class SlidingPaneLayout extends ViewGroup {
         public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfoCompat info) {
             final AccessibilityNodeInfoCompat superNode = AccessibilityNodeInfoCompat.obtain(info);
             super.onInitializeAccessibilityNodeInfo(host, superNode);
+            copyNodeInfoNoChildren(info, superNode);
+            superNode.recycle();
 
+            info.setClassName(SlidingPaneLayout.class.getName());
             info.setSource(host);
+
             final ViewParent parent = ViewCompat.getParentForAccessibility(host);
             if (parent instanceof View) {
                 info.setParent((View) parent);
             }
-            copyNodeInfoNoChildren(info, superNode);
 
-            superNode.recycle();
-
+            // This is a best-approximation of addChildrenForAccessibility()
+            // that accounts for filtering.
             final int childCount = getChildCount();
             for (int i = 0; i < childCount; i++) {
                 final View child = getChildAt(i);
-                if (!filter(child)) {
+                if (!filter(child) && (child.getVisibility() == View.VISIBLE)) {
+                    // Force importance to "yes" since we can't read the value.
+                    ViewCompat.setImportantForAccessibility(
+                            child, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES);
                     info.addChild(child);
                 }
             }
+        }
+
+        @Override
+        public void onInitializeAccessibilityEvent(View host, AccessibilityEvent event) {
+            super.onInitializeAccessibilityEvent(host, event);
+
+            event.setClassName(SlidingPaneLayout.class.getName());
         }
 
         @Override
@@ -1427,6 +1466,8 @@ public class SlidingPaneLayout extends ViewGroup {
             dest.setLongClickable(src.isLongClickable());
 
             dest.addAction(src.getActions());
+
+            dest.setMovementGranularities(src.getMovementGranularities());
         }
     }
 

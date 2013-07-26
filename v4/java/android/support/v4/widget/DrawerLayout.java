@@ -582,14 +582,34 @@ public class DrawerLayout extends ViewGroup {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-        final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-        final int widthSize = MeasureSpec.getSize(widthMeasureSpec);
-        final int heightSize = MeasureSpec.getSize(heightMeasureSpec);
+        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
+        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+        int widthSize = MeasureSpec.getSize(widthMeasureSpec);
+        int heightSize = MeasureSpec.getSize(heightMeasureSpec);
 
         if (widthMode != MeasureSpec.EXACTLY || heightMode != MeasureSpec.EXACTLY) {
-            throw new IllegalArgumentException(
-                    "DrawerLayout must be measured with MeasureSpec.EXACTLY.");
+            if (isInEditMode()) {
+                // Don't crash the layout editor. Consume all of the space if specified
+                // or pick a magic number from thin air otherwise.
+                // TODO Better communication with tools of this bogus state.
+                // It will crash on a real device.
+                if (widthMode == MeasureSpec.AT_MOST) {
+                    widthMode = MeasureSpec.EXACTLY;
+                } else if (widthMode == MeasureSpec.UNSPECIFIED) {
+                    widthMode = MeasureSpec.EXACTLY;
+                    widthSize = 300;
+                }
+                if (heightMode == MeasureSpec.AT_MOST) {
+                    heightMode = MeasureSpec.EXACTLY;
+                }
+                else if (heightMode == MeasureSpec.UNSPECIFIED) {
+                    heightMode = MeasureSpec.EXACTLY;
+                    heightSize = 300;
+                }
+            } else {
+                throw new IllegalArgumentException(
+                        "DrawerLayout must be measured with MeasureSpec.EXACTLY.");
+            }
         }
 
         setMeasuredDimension(widthSize, heightSize);
@@ -639,6 +659,7 @@ public class DrawerLayout extends ViewGroup {
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         mInLayout = true;
+        final int width = r - l;
         final int childCount = getChildCount();
         for (int i = 0; i < childCount; i++) {
             final View child = getChildAt(i);
@@ -658,11 +679,16 @@ public class DrawerLayout extends ViewGroup {
                 final int childHeight = child.getMeasuredHeight();
                 int childLeft;
 
+                final float newOffset;
                 if (checkDrawerViewGravity(child, Gravity.LEFT)) {
                     childLeft = -childWidth + (int) (childWidth * lp.onScreen);
+                    newOffset = (float) (childWidth + childLeft) / childWidth;
                 } else { // Right; onMeasure checked for us.
-                    childLeft = r - l - (int) (childWidth * lp.onScreen);
+                    childLeft = width - (int) (childWidth * lp.onScreen);
+                    newOffset = (float) (width - childLeft) / childWidth;
                 }
+
+                final boolean changeOffset = newOffset != lp.onScreen;
 
                 final int vgrav = lp.gravity & Gravity.VERTICAL_GRAVITY_MASK;
 
@@ -699,8 +725,13 @@ public class DrawerLayout extends ViewGroup {
                     }
                 }
 
-                if (lp.onScreen == 0) {
-                    child.setVisibility(INVISIBLE);
+                if (changeOffset) {
+                    setDrawerViewOffset(child, newOffset);
+                }
+
+                final int newVisibility = lp.onScreen > 0 ? VISIBLE : INVISIBLE;
+                if (child.getVisibility() != newVisibility) {
+                    child.setVisibility(newVisibility);
                 }
             }
         }
