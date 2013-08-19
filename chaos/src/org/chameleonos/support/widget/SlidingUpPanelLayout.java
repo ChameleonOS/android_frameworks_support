@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.chameleonos.widget;
+package org.chameleonos.support.widget;
 
 import android.content.Context;
 import android.content.res.TypedArray;
