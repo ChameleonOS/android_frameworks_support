@@ -506,10 +506,6 @@ public class SlidingUpPanelLayout extends ViewGroup {
     }
 
     @Override
-    public void childAccessibilityStateChanged(View child) {
-    }
-
-    @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         final int action = MotionEventCompat.getActionMasked(ev);
 
